@@ -249,7 +249,7 @@ func (bs *bayeuxServer) HandleSubscribe(msg *messages.SubscribeRequest) {
 
 	ch.Publish(&messages.EventMessage{ch.GetName(), struct {
 		Msg string `json:"msg"`
-	}{"Welcome to " + ch.GetName() + " Client '" + client.GetId() + "'"}, "66"})
+	}{"Welcome to " + ch.GetName() + " Client '" + client.GetId() + "'"}, ""})
 }
 
 func PublicMessage(bs Server, msg messages.RawMessage) {

@@ -110,5 +110,5 @@ type PublishResponse struct {
 type EventMessage struct {
 	Channel string      `json:"channel"`
 	Data    interface{} `json:"data"`
-	Id      string      `id:"id,omitempty"`
+	Id      string      `json:"id,omitempty"`
 }
