@@ -2,6 +2,8 @@ package bayeux
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 )
 
@@ -20,6 +22,16 @@ const (
 	RECONNECT_HANDSHAKE = "handshake"
 	RECONNECT_NONE      = "none"
 )
+
+var logger *log.Logger
+
+func init() {
+	// f, err := os.OpenFile("log.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	logger = log.New(os.Stdout, "go-bayux/client::", log.Ldate|log.Ltime)
+}
 
 var supportedClients = []string{CLIENT_WEBSOCKET}
 var defaultInterval = 60000

@@ -1,13 +1,14 @@
 package bayeux
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -49,12 +50,6 @@ type Server interface {
 }
 
 func NewServer() Server {
-	f, err := os.OpenFile("log.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		panic(err)
-	}
-
-	logger := log.New(f, "go-bayux/server::", log.Ldate|log.Ltime)
 
 	server := &bayeuxServer{
 		make(map[string]BayeuxHandler),
@@ -102,12 +97,55 @@ func NewServer() Server {
 	return server
 }
 
+func ParseReqBody(body io.Reader, v interface{}) error {
+	buf := bytes.Buffer{}
+	buf.ReadFrom(body)
+	return json.Unmarshal(buf.Bytes(), v)
+}
+
 func (bs *bayeuxServer) Bind(path string) {
 	http.Handle(path, websocket.Handler(func(ws *websocket.Conn) {
 		client := NewClient(GenerateNewClientId(), ws, bs)
 		bs.RegisterClient(client.GetId(), client)
 		client.Wait()
 	}))
+
+	// http.HandleFunc(path+"/handshake", func(resp http.ResponseWriter, req *http.Request) {
+	// 	client := NewLongPollClient(GenerateNewClientId(), resp, req, bs)
+	// 	bs.RegisterClient(client.GetId(), client)
+
+	// 	msgs := []*messages.HandshakeRequest{}
+
+	// 	err := ParseReqBody(req.Body, &msgs)
+	// 	if err != nil {
+	// 		http.Error(resp, "Parse Error, bad request", 406)
+	// 		return
+	// 	}
+
+	// 	handshakeRequest := msgs[0]
+
+	// 	Handshake(bs, client.GetId(), handshakeRequest)
+	// })
+
+	// http.HandleFunc(path+"/connect", func(resp http.ResponseWriter, req *http.Request) {
+	// 	msgs := []*messages.ConnectRequest{}
+
+	// 	err := ParseReqBody(req.Body, &msgs)
+	// 	if err != nil {
+	// 		http.Error(resp, "Parse Error, bad request", 406)
+	// 		return
+	// 	}
+
+	// 	connectRequest := msgs[0]
+
+	// 	//TODO Implement Connect
+
+	// 	Connect(bs, connectRequest)
+
+	// })
+	// http.HandleFunc(path+"/", func(resp http.ResponseWriter, req *http.Request) {
+	// 	<-time.After(time.Minute)
+	// })
 }
 
 func (bs *bayeuxServer) HandleFunc(channel string, handleFunc BayeuxHandler) {
