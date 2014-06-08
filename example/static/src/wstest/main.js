@@ -12,10 +12,21 @@ define([
             logLevel: 'info'
         });
 
-        cometd.handshake();
 
-        cometd.subscribe('/players', function(message) {
-            console.log(message);
+
+        cometd.handshake(function(handshakeReply) {
+            if (!handshakeReply.successful) {
+                console.log("Failed Handshake")
+                return
+            }
+
+            cometd.subscribe('/players', function(message) {
+                console.log(message);
+            });
+            
+            console.log(handshakeReply);
         });
+
+
     };
 });

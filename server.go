@@ -12,16 +12,22 @@ import (
 	"time"
 
 	"code.google.com/p/go.net/websocket"
+
+	"github.com/ebittleman/go-bayeux/channel"
+	"github.com/ebittleman/go-bayeux/messages"
 )
 
+type BayeuxHandler func(msg messages.RawMessage)
+
 type bayeuxServer struct {
-	channelHandlers map[string]BayeuxHandler
-	channels        map[string]Channel
-	clients         map[string]Client
-	clientMutex     *sync.Mutex
-	channelMutex    *sync.Mutex
-	incomingCh      chan Message
-	done            chan struct{}
+	channelHandlers       map[string]BayeuxHandler
+	channels              map[string]channel.Channel
+	clients               map[string]Client
+	clientMutex           *sync.Mutex
+	channelHandlerslMutex *sync.Mutex
+	channelsMutex         *sync.Mutex
+	incomingCh            chan messages.RawMessage
+	done                  chan struct{}
 
 	logger *log.Logger
 }
@@ -44,25 +50,32 @@ func NewServer() Server {
 
 	server := &bayeuxServer{
 		make(map[string]BayeuxHandler),
-		make(map[string]Channel),
+		make(map[string]channel.Channel),
 		make(map[string]Client),
 		&sync.Mutex{},
 		&sync.Mutex{},
-		make(chan Message),
+		&sync.Mutex{},
+		make(chan messages.RawMessage),
 		make(chan struct{}),
 		logger,
 	}
 
-	server.HandleFunc("/meta/handshake", func(msg *MessageStruct) {
-		Handshake(server, msg)
+	server.HandleFunc("/meta/handshake", func(msg messages.RawMessage) {
+		handshakeRequest := &messages.HandshakeRequest{}
+		json.Unmarshal(msg.Payload, handshakeRequest)
+		Handshake(server, msg.ClientId, handshakeRequest)
 	})
 
-	server.HandleFunc("/meta/connect", func(msg *MessageStruct) {
-		Connect(server, msg)
+	server.HandleFunc("/meta/connect", func(msg messages.RawMessage) {
+		connectRequest := &messages.ConnectRequest{}
+		json.Unmarshal(msg.Payload, connectRequest)
+		Connect(server, connectRequest)
 	})
 
-	server.HandleFunc("/meta/subscribe", func(msg *MessageStruct) {
-		Subscribe(server, msg)
+	server.HandleFunc("/meta/subscribe", func(msg messages.RawMessage) {
+		subscribeRequest := &messages.SubscribeRequest{}
+		json.Unmarshal(msg.Payload, subscribeRequest)
+		server.HandleSubscribe(subscribeRequest)
 	})
 
 	go server.Loop()
@@ -78,17 +91,17 @@ func (bs *bayeuxServer) Bind(path string) {
 }
 
 func (bs *bayeuxServer) HandleFunc(channel string, handleFunc BayeuxHandler) {
-	bs.channelMutex.Lock()
+	bs.channelHandlerslMutex.Lock()
 	bs.channelHandlers[channel] = handleFunc
-	bs.channelMutex.Unlock()
+	bs.channelHandlerslMutex.Unlock()
 }
 
 func (bs *bayeuxServer) GetHandler(channel string) BayeuxHandler {
 	var handleFunc BayeuxHandler
 
-	bs.channelMutex.Lock()
+	bs.channelHandlerslMutex.Lock()
 	handleFunc = bs.channelHandlers[channel]
-	bs.channelMutex.Unlock()
+	bs.channelHandlerslMutex.Unlock()
 
 	return handleFunc
 }
@@ -110,14 +123,14 @@ func (bs *bayeuxServer) GetClient(id string) Client {
 }
 
 func (bs *bayeuxServer) OnReceiveMessage(channel string, clientId string, payload []byte) {
-	bs.incomingCh <- message{channel, clientId, payload}
+	bs.incomingCh <- messages.RawMessage{channel, clientId, payload}
 }
 
 func (bs *bayeuxServer) Loop() {
 	for {
 		select {
 		case msg := <-bs.incomingCh:
-			go RouteIncomingMsg(bs, msg.(message))
+			go RouteIncomingMsg(bs, msg)
 		case <-bs.done:
 			return
 		}
@@ -137,7 +150,7 @@ func (bs *bayeuxServer) GetLogger() *log.Logger {
 	return bs.logger
 }
 
-func RouteIncomingMsg(bs Server, msg message) {
+func RouteIncomingMsg(bs Server, msg messages.RawMessage) {
 	handler := bs.GetHandler(msg.Channel)
 
 	if handler == nil {
@@ -145,16 +158,7 @@ func RouteIncomingMsg(bs Server, msg message) {
 		return
 	}
 
-	msgStruct := &MessageStruct{}
-	err := json.Unmarshal(msg.Payload, msgStruct)
-
-	msgStruct.ClientId = msg.ClientId
-
-	if err != nil {
-		panic(err)
-	}
-
-	handler(msgStruct)
+	handler(msg)
 }
 
 func GenerateNewClientId() string {
@@ -167,7 +171,33 @@ func GenerateNewClientId() string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func Connect(bs Server, msg *MessageStruct) {
+func Handshake(bs Server, ClientId string, msg *messages.HandshakeRequest) {
+	client := bs.GetClient(ClientId)
+	if client == nil {
+		panic("can't handshake someone who does not exist?")
+	}
+
+	bs.GetLogger().Printf("Do Handshake\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
+
+	client.SendMessage(&messages.HandshakeResponse{
+		msg.Channel,
+		"1.0",
+		"1.0",
+		supportedClients,
+		ClientId,
+		true,
+		true,
+		"",
+		msg.Id,
+		// nil,
+		&messages.HandshakeResponseAdvice{RECONNECT_RETRY, 0},
+		// &messages.HandshakeResponseAdvice{RECONNECT_RETRY, defaultInterval},
+	})
+
+}
+
+func Connect(bs Server, msg *messages.ConnectRequest) {
 	client := bs.GetClient(msg.ClientId)
 	if client == nil {
 		panic("can't connect someone who does not exist?")
@@ -176,29 +206,20 @@ func Connect(bs Server, msg *MessageStruct) {
 	bs.GetLogger().Printf("Do Connect\n%v\n", msg)
 	bs.GetLogger().Printf("For Client\n%v\n", client)
 
-	client.SendMessage(&struct {
-		Channel    string      `json:"channel"`
-		Successful bool        `json:"successful"`
-		Error      string      `json:"error"`
-		ClientId   string      `json:"clientId"`
-		Id         string      `json:"id"`
-		Timestamp  string      `json:"timestamp"`
-		Advice     interface{} `json:"advice"`
-	}{
+	//TODO Implement Connect
+
+	client.SendMessage(&messages.ConnectResponse{
 		msg.Channel,
 		true,
 		"",
 		msg.ClientId,
-		msg.Id,
 		NewTimestamp().String(),
-		struct {
-			Reconnect string `json:"reconnect"`
-			Interval  int    `json:"interval"`
-		}{"retry", defaultInterval},
+		msg.Id,
+		&messages.ConnectAdvice{RECONNECT_RETRY, defaultInterval},
 	})
 }
 
-func Subscribe(bs Server, msg *MessageStruct) {
+func (bs *bayeuxServer) HandleSubscribe(msg *messages.SubscribeRequest) {
 	client := bs.GetClient(msg.ClientId)
 	if client == nil {
 		panic("can't handshake someone who does not exist?")
@@ -206,43 +227,30 @@ func Subscribe(bs Server, msg *MessageStruct) {
 	bs.GetLogger().Printf("Do Subscribe\n%v\n", msg)
 	bs.GetLogger().Printf("For Client\n%v\n", client)
 
-	bs.HandleFunc(msg.Subscription, func(msg *MessageStruct) {
-		PublicMessage(bs, msg)
-	})
-}
-
-func Handshake(bs Server, msg *MessageStruct) {
-	client := bs.GetClient(msg.ClientId)
-	if client == nil {
-		panic("can't handshake someone who does not exist?")
+	bs.channelsMutex.Lock()
+	ch, ok := bs.channels[msg.Subscription]
+	if !ok {
+		ch = channel.NewChannel(msg.Subscription)
+		bs.channels[msg.Subscription] = ch
 	}
+	bs.channelsMutex.Unlock()
 
-	bs.GetLogger().Printf("Do Handshake\n%v\n", msg)
-	bs.GetLogger().Printf("For Client\n%v\n", client)
+	client.Subscribe(ch)
 
-	client.SendMessage(&struct {
-		Channel                  string      `json:"channel"`
-		Version                  string      `json:"version"`
-		MinimumVersion           string      `json:"minimumVersion"`
-		SupportedConnectionTypes []string    `json:"supportedConnectionTypes"`
-		ClientId                 string      `json:"clientId"`
-		Successful               bool        `json:"successful"`
-		AuthSuccessful           bool        `json:"authSuccessful"`
-		Advice                   interface{} `json:"advice"`
-	}{
+	client.SendMessage(&messages.SubscribeResponse{
 		msg.Channel,
-		"1.0",
-		"1.0",
-		supportedClients,
 		msg.ClientId,
+		msg.Subscription,
 		true,
-		true,
-		struct {
-			Reconnect string `json:"reconnect"`
-			Interval  int    `json:"interval"`
-		}{"retry", defaultInterval},
+		"",
+		NewTimestamp().String(),
+		msg.Id,
 	})
+
+	ch.Publish(&messages.EventMessage{ch.GetName(), struct {
+		Msg string `json:"msg"`
+	}{"Welcome to " + ch.GetName()}, "66"})
 }
 
-func PublicMessage(bs Server, msg *MessageStruct) {
+func PublicMessage(bs Server, msg messages.RawMessage) {
 }

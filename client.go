@@ -7,13 +7,16 @@ import (
 	"sync"
 
 	"code.google.com/p/go.net/websocket"
+
+	"github.com/ebittleman/go-bayeux/channel"
+	"github.com/ebittleman/go-bayeux/messages"
 )
 
 type webserverClient struct {
 	id           string
 	ws           *websocket.Conn
 	server       Server
-	channels     map[string]Channel
+	channels     map[string]channel.Channel
 	channelsLock *sync.Mutex
 	responses    chan interface{}
 	done         chan struct{}
@@ -21,12 +24,12 @@ type webserverClient struct {
 }
 
 type Client interface {
-	GetId() string
 	Close() error
 	Wait()
 	OnMessage(string, []byte)
-	SendMessage(interface{})
+	SendMessage(messages.Message)
 	GetLogger() *log.Logger
+	channel.Subscriber
 }
 
 func NewClient(id string, ws *websocket.Conn, server Server) Client {
@@ -37,7 +40,7 @@ func NewClient(id string, ws *websocket.Conn, server Server) Client {
 		id,
 		ws,
 		server,
-		make(map[string]Channel),
+		make(map[string]channel.Channel),
 		&sync.Mutex{},
 		make(chan interface{}),
 		make(chan struct{}),
@@ -114,8 +117,8 @@ func (c *webserverClient) OnMessage(ch string, payload []byte) {
 	c.server.OnReceiveMessage(ch, c.GetId(), payload)
 }
 
-func (c *webserverClient) SendMessage(msg interface{}) {
-	go func(c *webserverClient, msg interface{}) {
+func (c *webserverClient) SendMessage(msg messages.Message) {
+	go func(c *webserverClient, msg messages.Message) {
 		c.responses <- msg
 	}(c, msg)
 }
@@ -124,39 +127,39 @@ func (c *webserverClient) GetLogger() *log.Logger {
 	return c.logger
 }
 
-func (c *webserverClient) Subscribe(channel Channel) {
+func (c *webserverClient) Subscribe(ch channel.Channel) {
 
 	c.channelsLock.Lock()
 
-	_, ok := c.channels[channel.GetName()]
+	_, ok := c.channels[ch.GetName()]
 	if ok {
 		c.channelsLock.Unlock()
 		return
 	}
 
-	c.channels[channel.GetName()] = channel
+	c.channels[ch.GetName()] = ch
 	c.channelsLock.Unlock()
 
-	channel.AddSubscription(c, func(msg Message) {
+	ch.AddSubscription(c, func(msg messages.Message) {
 		c.SendMessage(msg)
 	})
 }
 
-func (c *webserverClient) Publish(channel Channel, msg Message) {
-	go channel.Publish(msg)
+func (c *webserverClient) Publish(ch channel.Channel, msg messages.Message) {
+	go ch.Publish(msg)
 }
 
-func (c *webserverClient) Unsubscribe(channel Channel) {
+func (c *webserverClient) Unsubscribe(ch channel.Channel) {
 	c.channelsLock.Lock()
 
-	_, ok := c.channels[channel.GetName()]
+	_, ok := c.channels[ch.GetName()]
 	if !ok {
 		c.channelsLock.Unlock()
 		return
 	}
 
-	delete(c.channels, channel.GetName())
+	delete(c.channels, ch.GetName())
 	c.channelsLock.Unlock()
 
-	channel.RemoveSubscription(c)
+	ch.RemoveSubscription(c)
 }

@@ -1,10 +1,12 @@
-package bayeux
+package channel
 
 import (
 	"sync"
+
+	"github.com/ebittleman/go-bayeux/messages"
 )
 
-type MessageHandler func(Message)
+type MessageHandler func(messages.Message)
 
 type channel struct {
 	name          string
@@ -17,14 +19,14 @@ type Channel interface {
 	GetName() string
 	AddSubscription(Subscriber, MessageHandler)
 	RemoveSubscription(Subscriber)
-	Publish(Message)
+	Publish(messages.Message)
 }
 
 type Subscriber interface {
 	GetId() string
 	Subscribe(Channel)
 	Unsubscribe(Channel)
-	Publish(Channel, Message)
+	Publish(Channel, messages.Message)
 }
 
 func NewChannel(name string) Channel {
@@ -66,7 +68,7 @@ func (c *channel) RemoveSubscription(subscriber Subscriber) {
 	subscriber.Unsubscribe(c)
 }
 
-func (c *channel) Publish(m Message) {
+func (c *channel) Publish(m messages.Message) {
 	c.lock.Lock()
 	for _, messageHandler := range c.subscriptions {
 		go messageHandler(m)

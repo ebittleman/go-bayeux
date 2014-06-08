@@ -14,7 +14,7 @@ const (
 	CLIENT_LONGPOLL  = "long-polling"
 	CLIENT_CALLBACK  = "callback-polling"
 	CLIENT_IFRAME    = "iframe"
-	CLIENT_FLASH     = "flase"
+	CLIENT_FLASH     = "flash"
 
 	RECONNECT_RETRY     = "retry"
 	RECONNECT_HANDSHAKE = "handshake"
@@ -23,75 +23,6 @@ const (
 
 var supportedClients = []string{CLIENT_WEBSOCKET}
 var defaultInterval = 60000
-
-type BayeuxHandler func(*MessageStruct)
-
-type message struct {
-	Channel  string
-	ClientId string
-	Payload  []byte
-}
-
-type request struct {
-	Message Message
-	Payload []byte
-}
-type handshakeRequest struct {
-	request
-}
-type connectRequest struct {
-	request
-}
-type Request interface {
-	GetMessage() Message
-}
-
-type response struct {
-	Message Message
-	Success bool
-	Response
-}
-type handshakeResponse struct {
-	response
-}
-type connectResponse struct {
-	response
-}
-type Response interface {
-	GetMesage() Message
-}
-
-type Advice struct {
-	Reconnect       string   `json:"reconnect"`
-	Interval        int      `json:"interval,omitempty"`
-	MultipleClients bool     `json:"multiple-clients,omitempty"`
-	Hosts           []string `json:"hosts,omitempty"`
-	CallbackPolling struct {
-		Reconnect string `json:"reconnect"`
-	} `json:"callback-polling,omitempty"`
-}
-
-type MessageStruct struct {
-	Channel                  string                 `json:"channel"`
-	ClientId                 string                 `json:"clientId,omitempty"`
-	Successful               bool                   `json:"successful,omitempty"`
-	Error                    string                 `json:"error,omitempty"`
-	Advice                   Advice                 `json:"advice,omitempty"`
-	Data                     map[string]interface{} `json:"data,omitempty"`
-	Id                       string                 `json:"id,omitempty"`
-	Ext                      interface{}            `json:"ext,omitempty"`
-	Version                  string                 `json:"version,omitempty"`
-	MinimumVersion           string                 `json:"minimumVersion,omitempty"`
-	SupportedConnectionTypes []string               `json:"supportedConnectionTypes,omitempty"`
-	AuthSuccessful           bool                   `json:"authSuccessful,omitempty"`
-	ConnectionType           string                 `json:"connectionType,omitempty"`
-	Timestamp                string                 `json:"timestamp,omitempty"`
-	Subscription             string                 `json:"subscription,omitempty"`
-}
-
-type Message interface {
-	// GetEvent() Event
-}
 
 type Event interface{}
 type Envelope interface{}
