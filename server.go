@@ -285,4 +285,6 @@ func PublicMessage(bs Server, msg messages.RawMessage) {
 	payload := make(map[string]interface{})
 	json.Unmarshal(msg.Payload, &payload)
 	bs.Publish(msg.Channel, payload)
+
+	// TODO, send publish response
 }
