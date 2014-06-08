@@ -4,8 +4,10 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -13,12 +15,15 @@ import (
 )
 
 type bayeuxServer struct {
-	channels     map[string]BayeuxHandler
-	clients      map[string]Client
-	clientMutex  *sync.Mutex
-	channelMutex *sync.Mutex
-	incomingCh   chan Message
-	done         chan struct{}
+	channelHandlers map[string]BayeuxHandler
+	channels        map[string]Channel
+	clients         map[string]Client
+	clientMutex     *sync.Mutex
+	channelMutex    *sync.Mutex
+	incomingCh      chan Message
+	done            chan struct{}
+
+	logger *log.Logger
 }
 
 type Server interface {
@@ -31,26 +36,21 @@ type Server interface {
 	OnReceiveMessage(string, string, []byte)
 	Close() error
 
-	// Server Attributes
-	// ProtocolVersion() string
-	// MinimumProtocolVersion() string
-	// GetSupportedConnectionTypes() []string
-
-	// Client Communication
-	// Handshake()
-	// Connect()
-	// On(Request)
-	// Emit(Response)
+	GetLogger() *log.Logger
 }
 
 func NewServer() Server {
+	logger := log.New(os.Stdout, "go-bayux/server::", log.Ldate|log.Ltime)
+
 	server := &bayeuxServer{
 		make(map[string]BayeuxHandler),
+		make(map[string]Channel),
 		make(map[string]Client),
 		&sync.Mutex{},
 		&sync.Mutex{},
 		make(chan Message),
 		make(chan struct{}),
+		logger,
 	}
 
 	server.HandleFunc("/meta/handshake", func(msg *MessageStruct) {
@@ -59,6 +59,10 @@ func NewServer() Server {
 
 	server.HandleFunc("/meta/connect", func(msg *MessageStruct) {
 		Connect(server, msg)
+	})
+
+	server.HandleFunc("/meta/subscribe", func(msg *MessageStruct) {
+		Subscribe(server, msg)
 	})
 
 	go server.Loop()
@@ -75,7 +79,7 @@ func (bs *bayeuxServer) Bind(path string) {
 
 func (bs *bayeuxServer) HandleFunc(channel string, handleFunc BayeuxHandler) {
 	bs.channelMutex.Lock()
-	bs.channels[channel] = handleFunc
+	bs.channelHandlers[channel] = handleFunc
 	bs.channelMutex.Unlock()
 }
 
@@ -83,7 +87,7 @@ func (bs *bayeuxServer) GetHandler(channel string) BayeuxHandler {
 	var handleFunc BayeuxHandler
 
 	bs.channelMutex.Lock()
-	handleFunc = bs.channels[channel]
+	handleFunc = bs.channelHandlers[channel]
 	bs.channelMutex.Unlock()
 
 	return handleFunc
@@ -129,6 +133,10 @@ func (bs *bayeuxServer) Close() error {
 	return nil
 }
 
+func (bs *bayeuxServer) GetLogger() *log.Logger {
+	return bs.logger
+}
+
 func RouteIncomingMsg(bs Server, msg message) {
 	handler := bs.GetHandler(msg.Channel)
 
@@ -164,8 +172,9 @@ func Connect(bs Server, msg *MessageStruct) {
 	if client == nil {
 		panic("can't connect someone who does not exist?")
 	}
-	fmt.Printf("Do Connect\n%v\n", msg)
-	fmt.Printf("For Client\n%v\n", client)
+
+	bs.GetLogger().Printf("Do Connect\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
 
 	client.SendMessage(&struct {
 		Channel    string      `json:"channel"`
@@ -185,7 +194,20 @@ func Connect(bs Server, msg *MessageStruct) {
 		struct {
 			Reconnect string `json:"reconnect"`
 			Interval  int    `json:"interval"`
-		}{"retry", 60000},
+		}{"retry", defaultInterval},
+	})
+}
+
+func Subscribe(bs Server, msg *MessageStruct) {
+	client := bs.GetClient(msg.ClientId)
+	if client == nil {
+		panic("can't handshake someone who does not exist?")
+	}
+	bs.GetLogger().Printf("Do Subscribe\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
+
+	bs.HandleFunc(msg.Subscription, func(msg *MessageStruct) {
+		PublicMessage(bs, msg)
 	})
 }
 
@@ -194,8 +216,9 @@ func Handshake(bs Server, msg *MessageStruct) {
 	if client == nil {
 		panic("can't handshake someone who does not exist?")
 	}
-	fmt.Printf("Do Handshake\n%v\n", msg)
-	fmt.Printf("For Client\n%v\n", client)
+
+	bs.GetLogger().Printf("Do Handshake\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
 
 	client.SendMessage(&struct {
 		Channel                  string      `json:"channel"`
@@ -210,12 +233,16 @@ func Handshake(bs Server, msg *MessageStruct) {
 		msg.Channel,
 		"1.0",
 		"1.0",
-		[]string{"websocket"},
+		supportedClients,
 		msg.ClientId,
 		true,
 		true,
 		struct {
 			Reconnect string `json:"reconnect"`
-		}{"retry"},
+			Interval  int    `json:"interval"`
+		}{"retry", defaultInterval},
 	})
+}
+
+func PublicMessage(bs Server, msg *MessageStruct) {
 }

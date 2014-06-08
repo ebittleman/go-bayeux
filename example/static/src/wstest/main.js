@@ -13,5 +13,9 @@ define([
         });
 
         cometd.handshake();
+
+        cometd.subscribe('/players', function(message) {
+            console.log(message);
+        });
     };
 });

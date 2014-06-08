@@ -14,7 +14,7 @@ var indexBytes []byte
 
 func main() {
 
-	logger := log.New(os.Stdout, "go-bayux", log.Ldate|log.Ltime)
+	logger := log.New(os.Stdout, "go-bayux::", log.Ldate|log.Ltime)
 	index, err := ioutil.ReadFile("./static/src/index.html")
 	indexBytes = index
 

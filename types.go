@@ -21,7 +21,8 @@ const (
 	RECONNECT_NONE      = "none"
 )
 
-var supportedClients = []string{CLIENT_LONGPOLL}
+var supportedClients = []string{CLIENT_WEBSOCKET}
+var defaultInterval = 60000
 
 type BayeuxHandler func(*MessageStruct)
 
@@ -85,6 +86,7 @@ type MessageStruct struct {
 	AuthSuccessful           bool                   `json:"authSuccessful,omitempty"`
 	ConnectionType           string                 `json:"connectionType,omitempty"`
 	Timestamp                string                 `json:"timestamp,omitempty"`
+	Subscription             string                 `json:"subscription,omitempty"`
 }
 
 type Message interface {
@@ -93,9 +95,7 @@ type Message interface {
 
 type Event interface{}
 type Envelope interface{}
-type Channel interface {
-	GetName() string
-}
+
 type ChannelSegment interface {
 	GetToken() string
 }
