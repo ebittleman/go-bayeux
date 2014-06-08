@@ -36,6 +36,7 @@ func (c *webserverClient) GetId() string {
 func (c *webserverClient) Wait() {
 	<-c.done
 }
+
 func (c *webserverClient) Close() error {
 	c.ws.Close()
 	if c.done == nil {
