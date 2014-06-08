@@ -2,7 +2,7 @@ node_modules
 dist
 src/dojo
 src/dijit
-src/dojox
+src/dojox/*
 src/util
-!src/dojox/cometd/*
+!src/dojox/cometd/
 !src/dojox/cometd.js
