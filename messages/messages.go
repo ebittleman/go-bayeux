@@ -17,7 +17,7 @@ type HandshakeRequest struct {
 		Timeout  int `json:"timeout"`
 		Interval int `json:"interval"`
 	} `json:"advice"`
-	Id string `id:"id,omitempty"`
+	Id string `json:"id,omitempty"`
 }
 
 type HandshakeResponseAdvice struct {
@@ -42,7 +42,7 @@ type ConnectRequest struct {
 	Channel        string `json:"channel"`
 	ClientId       string `json:"clientId"`
 	ConnectionType string `json:"connectionType"`
-	Id             string `id:"id,omitempty"`
+	Id             string `json:"id,omitempty"`
 }
 
 type ConnectAdvice struct {
@@ -56,28 +56,28 @@ type ConnectResponse struct {
 	Error      string         `json:"error"`
 	ClientId   string         `json:"clientId"`
 	Timestamp  string         `json:"timestamp"`
-	Id         string         `id:"id,omitempty"`
+	Id         string         `json:"id,omitempty"`
 	Advice     *ConnectAdvice `json:"advice"`
 }
 
 type DisconnectRequest struct {
 	Channel  string `json:"channel"`
 	ClientId string `json:"clientId"`
-	Id       string `id:"id,omitempty"`
+	Id       string `json:"id,omitempty"`
 }
 
 type DisconnectResponse struct {
 	Channel    string `json:"channel"`
 	ClientId   string `json:"clientId"`
 	Successful bool   `json:"successful"`
-	Id         string `id:"id,omitempty"`
+	Id         string `json:"id,omitempty"`
 }
 
 type SubscribeRequest struct {
 	Channel      string `json:"channel"`
 	ClientId     string `json:"clientId"`
 	Subscription string `json:"subscription"`
-	Id           string `id:"id,omitempty"`
+	Id           string `json:"id,omitempty"`
 }
 
 type SubscribeResponse struct {
@@ -87,7 +87,7 @@ type SubscribeResponse struct {
 	Successful   bool   `json:"successful"`
 	Error        string `json:"error,omitempty"`
 	Timestamp    string `json:"timestamp"`
-	Id           string `id:"id,omitempty"`
+	Id           string `json:"id,omitempty"`
 }
 
 type UnsubscribeRequest SubscribeRequest
@@ -97,14 +97,14 @@ type PublishRequest struct {
 	Channel  string      `json:"channel"`
 	Data     interface{} `json:"data"`
 	ClientId string      `json:"clientId"`
-	Id       string      `id:"id,omitempty"`
+	Id       string      `json:"id,omitempty"`
 }
 
 type PublishResponse struct {
 	Channel    string `json:"channel"`
 	Successful bool   `json:"successful"`
 	Error      string `json:"error,omitempty"`
-	Id         string `id:"id,omitempty"`
+	Id         string `json:"id,omitempty"`
 }
 
 type EventMessage struct {

@@ -38,6 +38,7 @@ type Server interface {
 	HandleFunc(string, BayeuxHandler)
 	GetHandler(string) BayeuxHandler
 	RegisterClient(string, Client)
+	UnregisterClient(string) error
 	GetClient(string) Client
 	OnReceiveMessage(string, string, []byte)
 	Close() error
@@ -48,7 +49,12 @@ type Server interface {
 }
 
 func NewServer() Server {
-	logger := log.New(os.Stdout, "go-bayux/server::", log.Ldate|log.Ltime)
+	f, err := os.OpenFile("log.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
+	}
+
+	logger := log.New(f, "go-bayux/server::", log.Ldate|log.Ltime)
 
 	server := &bayeuxServer{
 		make(map[string]BayeuxHandler),
@@ -68,6 +74,12 @@ func NewServer() Server {
 		Handshake(server, msg.ClientId, handshakeRequest)
 	})
 
+	server.HandleFunc("/meta/disconnect", func(msg messages.RawMessage) {
+		disconnectRequest := &messages.DisconnectRequest{}
+		json.Unmarshal(msg.Payload, disconnectRequest)
+		Disconnect(server, disconnectRequest)
+	})
+
 	server.HandleFunc("/meta/connect", func(msg messages.RawMessage) {
 		connectRequest := &messages.ConnectRequest{}
 		json.Unmarshal(msg.Payload, connectRequest)
@@ -78,6 +90,12 @@ func NewServer() Server {
 		subscribeRequest := &messages.SubscribeRequest{}
 		json.Unmarshal(msg.Payload, subscribeRequest)
 		server.HandleSubscribe(subscribeRequest)
+	})
+
+	server.HandleFunc("/meta/unsubscribe", func(msg messages.RawMessage) {
+		subscribeResponse := &messages.SubscribeResponse{}
+		json.Unmarshal(msg.Payload, subscribeResponse)
+		server.HandleUnsubscribe(subscribeResponse)
 	})
 
 	go server.Loop()
@@ -124,6 +142,13 @@ func (bs *bayeuxServer) RegisterClient(id string, client Client) {
 	bs.clientMutex.Lock()
 	bs.clients[id] = client
 	bs.clientMutex.Unlock()
+}
+func (bs *bayeuxServer) UnregisterClient(id string) error {
+	bs.clientMutex.Lock()
+	delete(bs.clients, id)
+	bs.clientMutex.Unlock()
+
+	return nil
 }
 
 func (bs *bayeuxServer) GetClient(id string) Client {
@@ -220,6 +245,25 @@ func Handshake(bs Server, ClientId string, msg *messages.HandshakeRequest) {
 
 }
 
+func Disconnect(bs Server, msg *messages.DisconnectRequest) {
+	client := bs.GetClient(msg.ClientId)
+	if client == nil {
+		return
+	}
+
+	bs.GetLogger().Printf("Do Dissconnect\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
+
+	client.Close()
+
+	client.SendMessage(&messages.DisconnectResponse{
+		msg.Channel,
+		msg.ClientId,
+		true,
+		msg.Id,
+	})
+}
+
 func Connect(bs Server, msg *messages.ConnectRequest) {
 	client := bs.GetClient(msg.ClientId)
 	if client == nil {
@@ -275,6 +319,34 @@ func (bs *bayeuxServer) HandleSubscribe(msg *messages.SubscribeRequest) {
 	}{"Welcome to " + ch.GetName() + " Client '" + client.GetId() + "'"}, ""})
 }
 
+func (bs *bayeuxServer) HandleUnsubscribe(msg *messages.SubscribeResponse) {
+	client := bs.GetClient(msg.ClientId)
+	if client == nil {
+		panic("can't publish someone whois not connected")
+	}
+
+	bs.GetLogger().Printf("Unsubscribe Message\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
+
+	bs.channelsMutex.Lock()
+	ch := bs.channels[msg.Subscription]
+	bs.channelsMutex.Unlock()
+
+	if ch != nil {
+		client.Unsubscribe(ch)
+	}
+
+	client.SendMessage(&messages.UnsubscribeResponse{
+		msg.Channel,
+		client.GetId(),
+		msg.Subscription,
+		true,
+		"",
+		NewTimestamp().String(),
+		msg.Id,
+	})
+}
+
 func GeneratePublicMesaageHandler(bs Server) BayeuxHandler {
 	return func(msg messages.RawMessage) {
 		PublicMessage(bs, msg)
@@ -282,9 +354,29 @@ func GeneratePublicMesaageHandler(bs Server) BayeuxHandler {
 }
 
 func PublicMessage(bs Server, msg messages.RawMessage) {
+	client := bs.GetClient(msg.ClientId)
+	if client == nil {
+		panic("can't publish someone whois not connected")
+	}
+
+	bs.GetLogger().Printf("Publish Message\n%v\n", msg)
+	bs.GetLogger().Printf("For Client\n%v\n", client)
+
 	payload := make(map[string]interface{})
 	json.Unmarshal(msg.Payload, &payload)
-	bs.Publish(msg.Channel, payload)
 
-	// TODO, send publish response
+	Id, ok := payload["id"]
+
+	if !ok {
+		Id = interface{}("")
+	}
+
+	client.SendMessage(&messages.PublishResponse{
+		msg.Channel,
+		true,
+		"",
+		Id.(string),
+	})
+
+	bs.Publish(msg.Channel, payload)
 }

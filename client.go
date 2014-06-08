@@ -33,8 +33,11 @@ type Client interface {
 }
 
 func NewClient(id string, ws *websocket.Conn, server Server) Client {
-
-	logger := log.New(os.Stdout, "go-bayux/client::", log.Ldate|log.Ltime)
+	f, err := os.OpenFile("log.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
+	}
+	logger := log.New(f, "go-bayux/client::", log.Ldate|log.Ltime)
 
 	client := &webserverClient{
 		id,
@@ -73,6 +76,9 @@ func (c *webserverClient) Close() error {
 	}
 
 	close(c.done)
+
+	c.server.UnregisterClient(c.GetId())
+
 	return nil
 }
 

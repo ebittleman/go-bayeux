@@ -20,13 +20,21 @@ define([
                 return
             }
 
-            cometd.subscribe('/players', function(message) {
+            unsubPlayers = wstest.subscribe('/players', function(message) {
                 console.log(message);
             });
-            
+
             console.log(handshakeReply);
         });
 
 
     };
+
+    wstest.subscribe = function(channel, listener){
+        var unsubKey = cometd.subscribe(channel, listener);
+
+        return {remove: function(){
+            cometd.unsubscribe(unsubKey);
+        }};
+    }
 });
