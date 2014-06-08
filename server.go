@@ -42,6 +42,8 @@ type Server interface {
 	OnReceiveMessage(string, string, []byte)
 	Close() error
 
+	Publish(string, messages.Message)
+
 	GetLogger() *log.Logger
 }
 
@@ -97,11 +99,23 @@ func (bs *bayeuxServer) HandleFunc(channel string, handleFunc BayeuxHandler) {
 }
 
 func (bs *bayeuxServer) GetHandler(channel string) BayeuxHandler {
-	var handleFunc BayeuxHandler
+	var (
+		handleFunc BayeuxHandler
+		ok         bool
+	)
 
 	bs.channelHandlerslMutex.Lock()
-	handleFunc = bs.channelHandlers[channel]
+	handleFunc, ok = bs.channelHandlers[channel]
 	bs.channelHandlerslMutex.Unlock()
+
+	if !ok {
+		bs.channelsMutex.Lock()
+		_, ok := bs.channels[channel]
+		if ok {
+			handleFunc = GeneratePublicMesaageHandler(bs)
+		}
+		bs.channelsMutex.Unlock()
+	}
 
 	return handleFunc
 }
@@ -134,9 +148,20 @@ func (bs *bayeuxServer) Loop() {
 		case <-bs.done:
 			return
 		}
-		fmt.Println("msg received")
 	}
 }
+
+func (bs *bayeuxServer) Publish(channelPath string, msg messages.Message) {
+	bs.channelsMutex.Lock()
+	ch, ok := bs.channels[channelPath]
+	if !ok {
+		fmt.Printf("Channel Not Found '%s'\n", channelPath)
+		return
+	}
+	bs.channelsMutex.Unlock()
+	ch.Publish(msg)
+}
+
 func (bs *bayeuxServer) Close() error {
 	if bs.done == nil {
 		return nil
@@ -190,9 +215,7 @@ func Handshake(bs Server, ClientId string, msg *messages.HandshakeRequest) {
 		true,
 		"",
 		msg.Id,
-		// nil,
 		&messages.HandshakeResponseAdvice{RECONNECT_RETRY, 0},
-		// &messages.HandshakeResponseAdvice{RECONNECT_RETRY, defaultInterval},
 	})
 
 }
@@ -215,7 +238,7 @@ func Connect(bs Server, msg *messages.ConnectRequest) {
 		msg.ClientId,
 		NewTimestamp().String(),
 		msg.Id,
-		&messages.ConnectAdvice{RECONNECT_RETRY, defaultInterval},
+		&messages.ConnectAdvice{RECONNECT_HANDSHAKE, 120000},
 	})
 }
 
@@ -252,5 +275,14 @@ func (bs *bayeuxServer) HandleSubscribe(msg *messages.SubscribeRequest) {
 	}{"Welcome to " + ch.GetName() + " Client '" + client.GetId() + "'"}, ""})
 }
 
+func GeneratePublicMesaageHandler(bs Server) BayeuxHandler {
+	return func(msg messages.RawMessage) {
+		PublicMessage(bs, msg)
+	}
+}
+
 func PublicMessage(bs Server, msg messages.RawMessage) {
+	payload := make(map[string]interface{})
+	json.Unmarshal(msg.Payload, &payload)
+	bs.Publish(msg.Channel, payload)
 }
