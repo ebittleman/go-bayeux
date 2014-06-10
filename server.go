@@ -27,6 +27,7 @@ type bayeuxServer struct {
 	clientMutex           *sync.Mutex
 	channelHandlerslMutex *sync.Mutex
 	channelsMutex         *sync.Mutex
+	websocketHandler      http.Handler
 	incomingCh            chan messages.RawMessage
 	done                  chan struct{}
 
@@ -35,7 +36,7 @@ type bayeuxServer struct {
 
 type Server interface {
 	// Lifecycle
-	Bind(string)
+	ServeHTTP(http.ResponseWriter, *http.Request)
 	HandleFunc(string, BayeuxHandler)
 	GetHandler(string) BayeuxHandler
 	RegisterClient(string, Client)
@@ -49,7 +50,11 @@ type Server interface {
 	GetLogger() *log.Logger
 }
 
-func NewServer() Server {
+func (s *bayeuxServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.websocketHandler.ServeHTTP(w, r)
+}
+
+func Handler() Server {
 
 	server := &bayeuxServer{
 		make(map[string]BayeuxHandler),
@@ -58,6 +63,7 @@ func NewServer() Server {
 		&sync.Mutex{},
 		&sync.Mutex{},
 		&sync.Mutex{},
+		nil,
 		make(chan messages.RawMessage),
 		make(chan struct{}),
 		logger,
@@ -93,6 +99,12 @@ func NewServer() Server {
 		server.HandleUnsubscribe(subscribeResponse)
 	})
 
+	server.websocketHandler = websocket.Handler(func(ws *websocket.Conn) {
+		client := NewClient(GenerateNewClientId(), ws, server)
+		server.RegisterClient(client.GetId(), client)
+		client.Wait()
+	})
+
 	go server.Loop()
 	return server
 }
@@ -101,51 +113,6 @@ func ParseReqBody(body io.Reader, v interface{}) error {
 	buf := bytes.Buffer{}
 	buf.ReadFrom(body)
 	return json.Unmarshal(buf.Bytes(), v)
-}
-
-func (bs *bayeuxServer) Bind(path string) {
-	http.Handle(path, websocket.Handler(func(ws *websocket.Conn) {
-		client := NewClient(GenerateNewClientId(), ws, bs)
-		bs.RegisterClient(client.GetId(), client)
-		client.Wait()
-	}))
-
-	// http.HandleFunc(path+"/handshake", func(resp http.ResponseWriter, req *http.Request) {
-	// 	client := NewLongPollClient(GenerateNewClientId(), resp, req, bs)
-	// 	bs.RegisterClient(client.GetId(), client)
-
-	// 	msgs := []*messages.HandshakeRequest{}
-
-	// 	err := ParseReqBody(req.Body, &msgs)
-	// 	if err != nil {
-	// 		http.Error(resp, "Parse Error, bad request", 406)
-	// 		return
-	// 	}
-
-	// 	handshakeRequest := msgs[0]
-
-	// 	Handshake(bs, client.GetId(), handshakeRequest)
-	// })
-
-	// http.HandleFunc(path+"/connect", func(resp http.ResponseWriter, req *http.Request) {
-	// 	msgs := []*messages.ConnectRequest{}
-
-	// 	err := ParseReqBody(req.Body, &msgs)
-	// 	if err != nil {
-	// 		http.Error(resp, "Parse Error, bad request", 406)
-	// 		return
-	// 	}
-
-	// 	connectRequest := msgs[0]
-
-	// 	//TODO Implement Connect
-
-	// 	Connect(bs, connectRequest)
-
-	// })
-	// http.HandleFunc(path+"/", func(resp http.ResponseWriter, req *http.Request) {
-	// 	<-time.After(time.Minute)
-	// })
 }
 
 func (bs *bayeuxServer) HandleFunc(channel string, handleFunc BayeuxHandler) {

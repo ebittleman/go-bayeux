@@ -4,10 +4,28 @@
 	<meta charset="utf-8">
 	<title>Dojo Application</title>
 
-	<link rel="stylesheet" href="http://127.0.0.1:8888/wstest/resources/main.css">
+	<link rel="stylesheet" href="{{.jsUrl}}/wstest/resources/main.css">
 </head>
 <body class="claro">
-	<script src="http://127.0.0.1:8888/dojoConfig.js"></script>
-	<script src="http://127.0.0.1:8888/dojo/dojo.js" async></script>
+	<script>
+        var dojoConfig = {
+            async: true,
+            baseUrl: '{{.jsUrl}}',
+            tlmSiblingOfDojo: false,
+            isDebug: true,
+            packages: [
+                'dojo',
+                'dijit',
+                'dojox',
+                'wstest',
+                'org'
+            ],
+            deps: [ 'wstest' ],
+            callback: function (wstest) {
+                wstest.init();
+            }
+        };
+    </script>
+	<script src="{{.jsUrl}}/dojo/dojo.js" async></script>
 </body>
 </html>
